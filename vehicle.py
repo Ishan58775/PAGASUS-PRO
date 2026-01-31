@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Ishan Gugale - Vehicle Challan Tool
+# Ishan Gugale - Vehicle Info Tool
 # Created by: ishan58775
 # Instagram: ishan58775
 
@@ -28,20 +28,16 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from datetime import datetime
 
 # ==================== CONFIGURATION ====================
-# [API SETUP]
-# This uses the endpoint you provided (Challan/Fines)
-API_BASE = "https://rto-vehicle-information-india.p.rapidapi.com/getVehicleChallan"
-API_HOST = "rto-vehicle-information-india.p.rapidapi.com"
-
-# [IMPORTANT] PUT YOUR KEY HERE
-# You must sign up on RapidAPI to get this key, otherwise it won't work.
-API_KEY = "YOUR_RAPIDAPI_KEY_HERE"
+# [API SETUP] - Reverted to your original Vercel API
+# This API is free and does not require a specific key.
+API_BASE = "https://vehicleinfobyterabaap.vercel.app/lookup"
 
 # Branding & Version
 VERSION = "3.0 PRO (Ishan Edition)"
 INSTAGRAM = "ishan58775"
 
 # Stealth User Agent (iPhone 15 Pro)
+# We keep this to make the request look like a real mobile phone
 USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
 
 console = Console()
@@ -63,6 +59,7 @@ def clean_rc(rc_input):
     """Removes special characters and spaces from RC number."""
     if not rc_input:
         return ""
+    # Keep alphanumeric only
     return re.sub(r'[^A-Za-z0-9]', '', rc_input).upper()
 
 # ==================== CACHING SYSTEM ====================
@@ -93,41 +90,31 @@ def fetch_vehicle_data(rc):
     if cached:
         return cached, True
 
-    # 2. Setup Headers (Updated for your specific API)
-    headers = {
-        "User-Agent": USER_AGENT,
-        "Content-Type": "application/json",
-        "x-rapidapi-host": API_HOST
-    }
+    # 2. Setup Request
+    # The Vercel API uses GET method with 'rc' parameter
+    params = {"rc": rc}
+    url = f"{API_BASE}?{urlencode(params)}"
     
-    # Add Key if valid
-    if API_KEY and API_KEY != "YOUR_RAPIDAPI_KEY_HERE":
-        headers["x-rapidapi-key"] = API_KEY
-
-    # 3. Setup Payload (The specific JSON body you requested)
-    payload = {
-        "vehicle_no": rc,
-        "consent": "Y",
-        "consent_text": "I hereby give my consent for Eccentric Labs API to fetch my information"
+    headers = {
+        "User-Agent": USER_AGENT
     }
 
     start = time.time()
     
-    # 4. Request
+    # 3. Execute Request
     try:
         with Progress(
             SpinnerColumn(style="bold cyan"), 
             TextColumn("[bold cyan]{task.description}"),
             transient=True
         ) as progress:
-            progress.add_task(description=f"Fetching Challan Data for {rc}...", total=None)
+            progress.add_task(description=f"Fetching details for {rc}...", total=None)
             
-            # Using POST as per your curl command
-            resp = requests.post(
-                API_BASE,
-                json=payload, 
+            # Using standard GET request for this API
+            resp = requests.get(
+                url,
                 headers=headers,
-                timeout=30
+                timeout=25
             )
             
     except Exception as e:
@@ -135,19 +122,14 @@ def fetch_vehicle_data(rc):
 
     duration = round((time.time() - start) * 1000, 2)
 
-    # 5. Validate
+    # 4. Validate Response
     if resp.status_code != 200:
-        # Try to read error message
-        try:
-            err_msg = resp.json().get('message', resp.text)
-        except:
-            err_msg = resp.text
-        return {"error": f"HTTP {resp.status_code} – {err_msg}"}, False
+        return {"error": f"HTTP {resp.status_code} – Server Error (Try again later)"}, False
 
     try:
         data = resp.json()
     except:
-        return {"error": "Invalid JSON returned."}, False
+        return {"error": "Invalid JSON returned. API might be down."}, False
 
     data["_api_time"] = duration
     save_cache(rc, data)
@@ -182,17 +164,17 @@ def display_results(rc, data, from_cache):
 
     # Main Data Table
     table = Table(
-        title=f"Vehicle Challan Info — {rc}",
+        title=f"Vehicle RC Info — {rc}",
         box=box.ROUNDED,
         show_lines=True,
     )
     table.add_column("Field", style="bold cyan", no_wrap=True)
     table.add_column("Value", style="white")
 
-    # Recursively print data if nested (Challan data is often complex)
     for k, v in display_data.items():
+        # Handle potential nested lists or dicts
         if isinstance(v, (dict, list)):
-            v = str(v)[:100] + "..." # Truncate long lists
+            v = str(v)
         table.add_row(k.replace("_", " ").title(), str(v))
 
     console.print(table)
